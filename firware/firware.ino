@@ -10,7 +10,11 @@
 #define redPin  24   // Pino digital conectado ao terminal R do LED RGB
 #define greenPin  26 // Pino digital conectado ao terminal G do LED RGB
 #define bluePin  28  // Pino digital conectado ao terminal B do LED RGB
-#define buzzerPin  42 // Pino digital conectado ao buzzer
+#define buzzerPin  49 // Pino digital conectado ao buzzer
+
+
+boolean flgDispChange = false;
+int MenuCont = 0;
 
 
 //Funcoes 
@@ -23,6 +27,9 @@ enum State {
   ST_INICIO,       // Estado inicial, aguardando para iniciar a dosagem
   ST_DOSATV,       // Estado de dosagem ativa
   ST_DOSREV,       // Estado de dosagem reversa
+  ST_SET_INIC,     // Estado de Setup Inicial
+  ST_SET_OPCOES,   // Estado de Setup Opcoes
+  ST_SET_CONF      // Estado de Confirmação de Setup    
 };
 
 // Define a intensidade luminosa de cada cor (varia de 0 a 255)
@@ -94,8 +101,8 @@ char keyMap[numRows][numCols] = {
   {'<', '0', '>', 'n'}    
 };
 
-byte rowPins[numRows] = {25, 27, 29, 31}; // Conecte os pinos das linhas do teclado a estes pinos do Arduino
-byte colPins[numCols] = {33, 35, 37, 39}; // Conecte os pinos das colunas do teclado a estes pinos do Arduino
+byte rowPins[numRows] = {25, 27, 29, 31,33}; // Conecte os pinos das linhas do teclado a estes pinos do Arduino
+byte colPins[numCols] = {41, 39, 37, 35}; // Conecte os pinos das colunas do teclado a estes pinos do Arduino
 
 Keypad keypad = Keypad(makeKeymap(keyMap), rowPins, colPins, numRows, numCols);
 
@@ -110,6 +117,11 @@ unsigned long dosingTime = 5000; // Tempo de dosagem em milissegundos (5 segundo
 // Variável para controlar o estado atual da máquina
 State currentState = ST_START;
 
+
+void ChangeState( State value)
+{
+  currentState = value;
+}
 
 
 void SetVelocidade( int veloc )
@@ -192,7 +204,10 @@ void Start_Motor(){
   Parar();
 }
 
-
+void ChamaSetup(){
+  ChangeState(ST_SET_INIC);
+  
+}
 
 void WindowsStart()
 {
@@ -258,8 +273,11 @@ void Startrek_theme() {
 
 void Inicia_Variaveis(){
   Serial.println("Iniciando Variaveis");
-  currentState = ST_START;
-  memset(buffer,'/0',sizeof(buffer));
+  flgDispChange = false;
+  MenuCont = 0;
+  //currentState = ST_START;
+  ChangeState(ST_START);
+  memset(buffer,'\0',sizeof(buffer));
   calcularVolume(velocidade); /*Calcula volume*/
   PrintXY(0,0,"        Dosador");
   PrintXY(0,1,"       Versao 1.0");
@@ -294,12 +312,14 @@ void Succao(){
   //FORWARD
   Motor.run(BACKWARD); //delante
   dosingStartTime = millis();
-  currentState = ST_DOSATV;
+  //currentState = ST_DOSATV;
+  ChangeState(ST_DOSATV);
 }
 
 void Parar(){
   Motor.run(RELEASE);
-  currentState = ST_INICIO;
+  //currentState = ST_INICIO;
+  ChangeState(ST_INICIO);
   ICQErro();
 }
 
@@ -308,7 +328,8 @@ void Despejar(){
   //BACKWARD
   Motor.run(FORWARD); //paro
   dosingStartTime = millis();
-  currentState = ST_INICIO;
+  //currentState = ST_INICIO;
+  ChangeState(ST_INICIO);
 }
 
 
@@ -319,16 +340,18 @@ void Analisa_DosAtv()
   if (millis() - dosingStartTime >= dosingTime)
   {
         Parar(); // Para a dosagem
-        currentState = ST_INICIO;
+        //currentState = ST_INICIO;
+        ChangeState(ST_INICIO);
   }
 }
 
 void Wellcome()
 {
   PrintXY(0,0,"   DOSADOR V.1    ");
-  PrintXY(0,1,"F1-DOSE | F2-SETUP");
+  PrintXY(0,3,"F1-DOSE | F2-SETUP");
   Serial.println("Bem vindo ao sistema");
-  currentState = ST_INICIO;  
+  //currentState = ST_INICIO;  
+  ChangeState(ST_INICIO);
 }
 
 void Controla_Led()
@@ -339,9 +362,42 @@ void Controla_Led()
   analogWrite(bluePin, blueIntensity);
 }
 
+
+
+//*******Inicio de bloco de Setup***
+void Mostra_Menu()
+{
+  //MenuCont
+  
+  
+}
+
+void Setup_Inicio()
+{
+  if (flgDispChange)
+  {
+    CLS();
+    PrintXY(0,0,"     ### SETUP ### ");
+    Mostra_Menu();
+  
+  
+    PrintXY(0,3,"Setas|ENT sel");
+    flgDispChange=false;
+  }
+  
+}
+
+
+
+//*******Fim de bloco de setup***
+
 void Le_Teclado()
 {
   key = keypad.getKey();
+  if(key){
+    Serial.print("Teclado");
+    Serial.println(key);
+  }
 }
 
 void Le_Termopar()
@@ -350,21 +406,55 @@ void Le_Termopar()
   teplotaC = termoclanek.readCelsius();
   char strtmp[20];
   memset(strtmp,'\0',sizeof(strtmp));
-  dtostrf(teplotaC,7,2,strtmp);
-  strcat(strtmp,"C");
-  PrintXY(0,2,strtmp);
   
+  //Mostra temperatura em tela principal
+  if(currentState==ST_INICIO)
+  {
+    dtostrf(teplotaC,7,2,strtmp);
+    strcat(strtmp,"C");
+    PrintXY(0,2,strtmp);
+  }
 }
 
 void Leituras()
 {
   Le_Termopar();
   Le_Teclado();
+  
+}
+
+void Analisa_teclas()
+{
+  //F1
+  if(key=='F'){
+    if(currentState==ST_INICIO){
+      ChangeState(ST_SET_INIC);
+      flgDispChange= true;
+      MenuCont = 0;
+    }    
+  }
+  //ESC
+  if(key=='e')
+  {
+    Wellcome();
+  }
+  //Seta p baixo
+  if(key=='v')
+  {
+    if(currentState==ST_SET_INIC)
+    {
+      flgDispChange= true;
+      MenuCont = MenuCont +1;
+    }
+  }
+  key = ' '; //Zera key
+  
 }
 
 void Analisar()
 {
   Leituras();
+  Analisa_teclas();
   switch (currentState)
   { 
     case ST_START:
@@ -383,6 +473,11 @@ void Analisar()
 
     case ST_DOSREV:
       Analisa_DosAtv();
+      break;
+
+    case ST_SET_INIC:
+      //Opcoes de Inicio de setup
+      Setup_Inicio();
       break;
   }
 }
