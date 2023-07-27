@@ -1,10 +1,12 @@
 # Dosador
-
-Dosador is open source project.
-
+## Object
 Doser heats up liquids and injects them in measures from 0.25ml to values greater than 600ml.
 Using a peristaltic pump and an arduino mega.
 The dosador project is completely open source.
+
+## License
+Dosador is open source project.
+
 ![Plastic Box](https://github.com/marcelomaurin/dosador/blob/main/img/caixa2.jpg)
 
 Please, see our wiki for more information.
