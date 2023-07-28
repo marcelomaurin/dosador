@@ -15,7 +15,9 @@
 
 boolean flgDispChange = false;
 int MenuCont = 0;
-
+int MAXCont = 5; //Maximo de menus
+int MAXBarra = 255;
+int posBarra = 0;
 
 //Funcoes 
 void SetVelocidade( int veloc );
@@ -27,9 +29,8 @@ enum State {
   ST_INICIO,       // Estado inicial, aguardando para iniciar a dosagem
   ST_DOSATV,       // Estado de dosagem ativa
   ST_DOSREV,       // Estado de dosagem reversa
-  ST_SET_INIC,     // Estado de Setup Inicial
-  ST_SET_OPCOES,   // Estado de Setup Opcoes
-  ST_SET_CONF      // Estado de Confirmação de Setup    
+  ST_SET_INIC,     // Estado de Setup Inicial 
+  ST_SET_VELOC_INIC //Inicio Velocidade   
 };
 
 // Define a intensidade luminosa de cada cor (varia de 0 a 255)
@@ -206,7 +207,6 @@ void Start_Motor(){
 
 void ChamaSetup(){
   ChangeState(ST_SET_INIC);
-  
 }
 
 void WindowsStart()
@@ -342,12 +342,16 @@ void Analisa_DosAtv()
         Parar(); // Para a dosagem
         //currentState = ST_INICIO;
         ChangeState(ST_INICIO);
+        
   }
 }
 
 void Wellcome()
 {
+  CLS();
   PrintXY(0,0,"   DOSADOR V.1    ");
+  PrintXY(0,1,"                  ");
+  PrintXY(0,2,"                  ");
   PrintXY(0,3,"F1-DOSE | F2-SETUP");
   Serial.println("Bem vindo ao sistema");
   //currentState = ST_INICIO;  
@@ -368,8 +372,56 @@ void Controla_Led()
 void Mostra_Menu()
 {
   //MenuCont
-  
-  
+  int pagina = (MenuCont / 2);
+  int posicaopag = MenuCont % 2;
+  char texto[40];
+  switch(pagina) {
+    case 0:
+      sprintf(texto,"%sVelocidade",(posicaopag==0?"*":" ") );
+      PrintXY(0,1,texto);
+      sprintf(texto,"%sConteudo",(posicaopag==1?"*":" ") );
+      PrintXY(0,2,texto);
+      break;
+    case 1:
+      sprintf(texto,"%sTemperatura",(posicaopag==0?"*":" ") );
+      PrintXY(0,1,texto);
+      sprintf(texto,"%sAquecimento",(posicaopag==1?"*":" ") );
+      PrintXY(0,2,texto);
+      break;
+    case 2:
+      sprintf(texto,"%sIntegracao",(posicaopag==0?"*":" ") );
+      PrintXY(0,1,texto);
+      sprintf(texto,"%sInfo",(posicaopag==1?"*":" ") );
+      PrintXY(0,2,texto);
+      break;    
+    case 3:
+      sprintf(texto,"%s             ",(posicaopag==0?"*":" ") );
+      PrintXY(0,1,texto);
+      sprintf(texto,"%s             ",(posicaopag==1?"*":" ") );
+      PrintXY(0,2,texto);
+      break;          
+  }  
+}
+
+//Mostra velocidade
+void Mostra_Velocidade()
+{
+  if (flgDispChange)
+  {
+    Serial.println("Mostra_Velocidade");
+    PrintXY(0,1,"Digite ^ ou v");
+    char barra[20];
+ 
+    memset('\0',barra,20);  
+    int total = ((velocidade / 255)*20);
+    Serial.println(total);
+    for(int cont=0;cont<total;cont++)
+    {
+     strcat(barra,"#");
+     Serial.println(barra);
+    }
+    PrintXY(0,2,barra);
+  }
 }
 
 void Setup_Inicio()
@@ -381,13 +433,42 @@ void Setup_Inicio()
     Mostra_Menu();
   
   
-    PrintXY(0,3,"Setas|ENT sel");
+    PrintXY(0,3,"Setas | ENT selec  ");
     flgDispChange=false;
-  }
+  }  
+}
+
+void Setup_Veloc_Inic()
+{
   
+  if(flgDispChange)
+  {
+    flgDispChange=false;
+    CLS();
+    PrintXY(0,0,"# SETUP VELOCIDADE #");
+    Mostra_Velocidade();
+  
+  
+    PrintXY(0,3,"SETAS | ENT/ESC ");
+    
+    Serial.println("Setup_Veloc_Inic()");
+  }  
+
 }
 
 
+void MudaSetup()
+{
+  int pagina = (MenuCont / 2);
+  int posicaopag = MenuCont % 2;
+  
+  Serial.println("MudaSetup()");
+  //Muda para setup de velocidade
+  if ((pagina==0)&&(posicaopag==0)) {
+    flgDispChange= true;
+    ChangeState(ST_SET_VELOC_INIC);
+  }
+}
 
 //*******Fim de bloco de setup***
 
@@ -426,7 +507,7 @@ void Leituras()
 void Analisa_teclas()
 {
   //F1
-  if(key=='F'){
+  if(key=='G'){
     if(currentState==ST_INICIO){
       ChangeState(ST_SET_INIC);
       flgDispChange= true;
@@ -444,9 +525,71 @@ void Analisa_teclas()
     if(currentState==ST_SET_INIC)
     {
       flgDispChange= true;
-      MenuCont = MenuCont +1;
+      if (MenuCont<MAXCont)
+      {
+        MenuCont = MenuCont +1;
+      }
+       else
+       {
+        MenuCont = 0;
+       }     
+    }
+    //Controle de velocidade
+    if(currentState==ST_SET_VELOC_INIC)
+    {
+      flgDispChange= true;
+      if (posBarra<MAXBarra)
+      {
+        posBarra = posBarra +1;
+      }
+       else
+       {
+        posBarra = 0;
+       }     
     }
   }
+    //Seta p cima
+  if(key=='^')
+  {
+    if(currentState==ST_SET_INIC)
+    {
+      flgDispChange= true;
+      if (MenuCont>0)
+      {
+        MenuCont = MenuCont -1;
+      }
+      else
+      {
+        MenuCont = MAXCont;
+      }
+      
+    }
+    //Controle de velocidade
+    if(currentState==ST_SET_VELOC_INIC)
+    {
+      flgDispChange= true;
+      if(posBarra>0)
+      {
+        posBarra= posBarra-1;
+      }
+      else
+      {
+        posBarra= MAXBarra;
+      }
+      
+    }
+  }
+
+  //Seta Enter
+  if(key=='n')
+  {
+    Serial.println(currentState);
+    if(currentState==ST_SET_INIC)
+    {
+      MudaSetup();
+    }    
+  }
+
   key = ' '; //Zera key
   
 }
@@ -478,6 +621,9 @@ void Analisar()
     case ST_SET_INIC:
       //Opcoes de Inicio de setup
       Setup_Inicio();
+      break;
+    case ST_SET_VELOC_INIC:
+      Setup_Veloc_Inic();
       break;
   }
 }
