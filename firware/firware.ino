@@ -3,7 +3,8 @@
 #include <AFMotor.h>
 #include <Keypad.h>
 #include <max6675.h>
-
+#include <string.h>
+#include <ctype.h>
 
 #define pin01 06
 #define pin02 07
@@ -21,7 +22,7 @@ int posBarra = 0;
 
 //Funcoes 
 void SetVelocidade( int veloc );
-
+void PrintfXY(int x, int y, float valor);
 
 // Definição dos estados da máquina
 enum State {
@@ -30,7 +31,8 @@ enum State {
   ST_DOSATV,       // Estado de dosagem ativa
   ST_DOSREV,       // Estado de dosagem reversa
   ST_SET_INIC,     // Estado de Setup Inicial 
-  ST_SET_VELOC_INIC //Inicio Velocidade   
+  ST_SET_VELOC_INIC, //Inicio Velocidade   
+  ST_SET_CONTE_INIC //Inicio Conteudo
 };
 
 // Define a intensidade luminosa de cada cor (varia de 0 a 255)
@@ -42,8 +44,6 @@ int pinSO  = 36; // Atribui o pino 8 como SO
 int pinCS  = 38; // Atribui o pino 9 como CS
 int pinSCK = 40; // Atribui o pino 10 como SCK
 
-float volumeEmMl = 3.5;
-float fluxoEmMlPorMinuto = 43.29; //velocidade 100
 
 // Cria uma instância da biblioteca MAX6675.
 MAX6675 termoclanek(pinSCK, pinCS, pinSO);
@@ -77,16 +77,6 @@ int melodyICQ[] = {
   0, 125,    // Silêncio, 1/8
 };
 
-// Melodia "melodyStartrek" para reproduzir o tema de Star Trek
-int melodyStartrek[] = {
-  988, 4, 1175, 8, 1319, 8, 1175, 8,
-  988, 4, 1175, 8, 1319, 8, 1175, 8,
-  988, 4, 1175, 8, 1319, 8, 1175, 8,
-  1319, 4, 1480, 8, 1568, 8, 1480, 8,
-  1319, 4, 1175, 8, 988, 8, 880, 8,
-  784, 2,
-  // Adicione mais notas conforme necessário
-};
 
 LiquidCrystal_I2C lcd(0x27,20,4);  // set the LCD address to 0x27 for a 16 chars and 2 line display
 
@@ -111,6 +101,9 @@ char key; //Tecla digitada
 char buffer[255];
 
 int velocidade = 255;
+float volumeEmMl = 3.5;
+float fluxoEmMlPorMinuto = 43.29; //velocidade 100
+float valordigitado = 0;
 
 AF_DCMotor Motor(1);
 unsigned long dosingStartTime; // Variável para armazenar o tempo de início da dosagem
@@ -124,6 +117,46 @@ void ChangeState( State value)
   currentState = value;
 }
 
+float atualizarNumero(float numeroAtual, char caracter) {
+    char str[50];
+    int intNumero = numeroAtual*100;
+    sprintf(str, "%d", intNumero);  // Convert float to string
+
+    if (caracter == '<') {
+        // Se o caractere é '<', remover o último dígito
+        int length = strlen(str);
+        if (length > 0) {
+            // Se o último dígito é o ponto decimal, remover mais um dígito
+            if (str[length - 1] == '.') {
+                str[length - 2] = '\0';
+            } else {
+                str[length - 1] = '\0';
+            }
+        }
+        // Se a string ficou vazia, definir o número como zero
+        if (str[0] == '\0') {
+            numeroAtual = 0.0f;
+        } else {
+            numeroAtual = atof(str);  // Convert string back to float
+        }
+    } else if (caracter == '#') {
+        numeroAtual = 0.0f;
+    } else if (isdigit(caracter)) {
+        Serial.println("Entrou aqui!");
+        // Se o caractere é um dígito, adicioná-lo ao número atual
+        // Adicionar o dígito na parte inteira
+        sprintf(str,"%s%c",str,caracter);
+        Serial.print("caract:");
+        Serial.println(str);
+        numeroAtual = atof(str)/100;  // Convert string back to float
+        
+        Serial.print("numeroAtual:");
+        Serial.println(numeroAtual);
+    }
+    // Caso contrário, ignorar o caractere
+
+    return numeroAtual;
+}
 
 void SetVelocidade( int veloc )
 {
@@ -195,6 +228,12 @@ void PrintXY(int x, int y, char *Texto)
   lcd.print(Texto);
 }
 
+void PrintfXY(int x, int y, float valor)
+{
+  lcd.setCursor(x,y);
+  lcd.print(valor);
+}
+
 void CLS(){
   lcd.clear();
 }
@@ -229,7 +268,7 @@ void WindowsStart()
 
 
 // Função para tocar a melodia "melodyICQ"
-void ICQErro() {
+void ICQ() {
   // Calcula o número de notas (melodyICQ[] tem frequência e duração)
   int numNotes = sizeof(melodyICQ) / sizeof(melodyICQ[0]) / 2;
 
@@ -243,28 +282,6 @@ void ICQErro() {
     }
     int pauseBetweenNotes = noteDuration * 1.30; // Pausa entre as notas (1.30 vezes a duração da nota)
     delay(pauseBetweenNotes);
-  }
-
-  // Pausa entre as sequências de sons
-  delay(1000);
-}
-// Função para tocar a melodia "melodyStartrek"
-void Startrek_theme() {
-  // Calcula o número de notas (melodyStartrek[] tem frequência e duração)
-  int numNotes = sizeof(melodyStartrek) / sizeof(melodyStartrek[0]) / 2;
-
-  // Reproduz o tema de Star Trek
-  for (int i = 0; i < numNotes * 2; i = i + 2) {
-    int noteDuration = melodyStartrek[i + 1];
-    if (melodyStartrek[i] == 0) { // Se a frequência for 0, é um silêncio
-      noTone(buzzerPin); // Desliga o buzzer (silêncio)
-    } else {
-      tone(buzzerPin, melodyStartrek[i], noteDuration);
-    }
-    int pauseBetweenNotes = noteDuration * 1.30; // Pausa entre as notas (1.30 vezes a duração da nota)
-    delay(pauseBetweenNotes);
-    noTone(buzzerPin); // Desliga o buzzer após a duração da nota
-    delay(50); // Pequena pausa entre as notas
   }
 
   // Pausa entre as sequências de sons
@@ -296,7 +313,6 @@ void Start_Led()
 void setup() {
   Start_Serial();
   Start_Buzzer();
-  Startrek_theme();
   Start_LDC();
   Start_Rele();  
   Start_Motor();
@@ -320,7 +336,7 @@ void Parar(){
   Motor.run(RELEASE);
   //currentState = ST_INICIO;
   ChangeState(ST_INICIO);
-  ICQErro();
+  ICQ();
 }
 
 void Despejar(){
@@ -406,23 +422,33 @@ void Mostra_Menu()
 //Mostra velocidade
 void Mostra_Velocidade()
 {
-  if (flgDispChange)
-  {
-    Serial.println("Mostra_Velocidade");
+    //flgDispChange=false;
+    //Serial.println("Mostra_Velocidade");
     PrintXY(0,1,"Digite ^ ou v");
-    char barra[20];
- 
-    memset('\0',barra,20);  
-    int total = ((velocidade / 255)*20);
+    Serial.print("POSBARRA:");
+    Serial.println(posBarra);
+    char barra[20]; /*Barra de demonstracao*/ 
+    memset(barra,'\0',20); /*Iniciando barra*/  
+    int total = ((posBarra*100/255)*20)/100;
+    
+    Serial.print("Total:");
     Serial.println(total);
-    for(int cont=0;cont<total;cont++)
+    for(int cont=0;cont<(int)total;cont++)
     {
      strcat(barra,"#");
-     Serial.println(barra);
     }
-    PrintXY(0,2,barra);
-  }
+    Serial.print("Barra:");
+    Serial.println(barra);
+    PrintXY(0,2,barra);  
 }
+
+//Mostra Conteudo
+void Mostra_Conteudo()
+{
+    PrintXY(0,1,"Digite o valor, # < ");
+    PrintfXY(0,2,valordigitado);  
+}
+
 
 void Setup_Inicio()
 {
@@ -442,16 +468,30 @@ void Setup_Veloc_Inic()
 {
   
   if(flgDispChange)
-  {
-    flgDispChange=false;
+  {    
     CLS();
+    flgDispChange = false;
     PrintXY(0,0,"# SETUP VELOCIDADE #");
     Mostra_Velocidade();
-  
-  
-    PrintXY(0,3,"SETAS | ENT/ESC ");
     
-    Serial.println("Setup_Veloc_Inic()");
+    PrintXY(0,3,"SETAS | ENT/ESC ");
+    //Serial.println("Setup_Veloc_Inic()");
+  }  
+
+}
+
+void Setup_CONTE_Inic()
+{
+  
+  if(flgDispChange)
+  {    
+    CLS();
+    flgDispChange = false;
+    PrintXY(0,0,"# SETUP CONTEUDO #");
+    Mostra_Conteudo();
+    
+    PrintXY(0,3,"DIGITE | ENT/ESC ");
+    //Serial.println("Setup_Veloc_Inic()");
   }  
 
 }
@@ -465,8 +505,23 @@ void MudaSetup()
   Serial.println("MudaSetup()");
   //Muda para setup de velocidade
   if ((pagina==0)&&(posicaopag==0)) {
+    Serial.println("Mudou para ST_SET_VELOC_INIC");
     flgDispChange= true;
+    //Atribui valor de velocidade
+    
     ChangeState(ST_SET_VELOC_INIC);
+    posBarra = velocidade;
+    Serial.println("Fim de MudaSetup()");
+  }
+  if ((pagina==0)&&(posicaopag==1)) {
+    Serial.println("Mudou para ST_SET_CONTE_INIC");
+    flgDispChange= true;
+    //Atribui valor de velocidade
+    
+    ChangeState(ST_SET_CONTE_INIC);
+    valordigitado = volumeEmMl;
+    Serial.println("Fim de MudaSetup()");
+  //ST_SET_CONTE_INIC
   }
 }
 
@@ -538,15 +593,17 @@ void Analisa_teclas()
     if(currentState==ST_SET_VELOC_INIC)
     {
       flgDispChange= true;
-      if (posBarra<MAXBarra)
+      if (posBarra>0)
       {
-        posBarra = posBarra +1;
+        posBarra = posBarra -1;
+        
       }
        else
        {
-        posBarra = 0;
-       }     
-    }
+        posBarra = MAXBarra;
+       }
+       Serial.println(posBarra);     
+    }    
   }
     //Seta p cima
   if(key=='^')
@@ -562,36 +619,121 @@ void Analisa_teclas()
       {
         MenuCont = MAXCont;
       }
+      Serial.println(posBarra);
       
     }
     //Controle de velocidade
     if(currentState==ST_SET_VELOC_INIC)
     {
       flgDispChange= true;
-      if(posBarra>0)
+      if(posBarra<MAXBarra)
       {
-        posBarra= posBarra-1;
+        posBarra= posBarra+1;
       }
       else
       {
-        posBarra= MAXBarra;
+        posBarra= 0;
       }
       
     }
   }
-
+  if(key=='>')
+  {
+    //Controle de velocidade
+    if(currentState==ST_SET_VELOC_INIC)
+    {
+      flgDispChange= true;
+      if(posBarra<MAXBarra)
+      {
+        posBarra= posBarra+1;
+      }
+      else
+      {
+        posBarra= 0;
+      }
+    }
+  }
+  if(key=='<')
+  {
+    if(currentState==ST_SET_VELOC_INIC)
+    {
+      flgDispChange= true;
+      valordigitado = atualizarNumero(valordigitado,key);
+    }
+    if(currentState==ST_SET_VELOC_INIC)
+    {
+      flgDispChange= true;
+      if (posBarra>0)
+      {
+        posBarra = posBarra -1;
+        
+      }
+       else
+      {
+        posBarra = MAXBarra;
+      }
+      Serial.println(posBarra);     
+    }    
+  }
+  //Seta Enter
+  if(key=='#')
+  {
+    //O Controle derivador do setup
+    if(currentState==ST_SET_CONTE_INIC)
+    {
+      Serial.println("#");
+      flgDispChange= true;
+      valordigitado = atualizarNumero(valordigitado,key);
+    }
+    
+  }
   //Seta Enter
   if(key=='n')
   {
     Serial.println(currentState);
+    
     if(currentState==ST_SET_INIC)
     {
+      ICQ();
       MudaSetup();
-    }    
+    } else
+    {
+      //O Controle derivador do setup
+      if(currentState==ST_SET_VELOC_INIC)
+      {
+        ///ST_SET_INIC  
+        flgDispChange= true;
+        ICQ();
+        //velocidade=posBarra;
+        SetVelocidade(posBarra);
+        ChangeState(ST_SET_INIC);   
+      }    
+      //O Controle derivador do setup
+      if(currentState==ST_SET_CONTE_INIC)
+      {
+        flgDispChange= true;
+        ICQ();
+        volumeEmMl = valordigitado;
+        ChangeState(ST_SET_INIC);   
+        
+      }
+      
+    }
+  }
+  //Digitou valores
+  if(isdigit(key))
+  {
+    Serial.println("Numeros");
+    if(currentState==ST_SET_CONTE_INIC)
+    {      
+      flgDispChange= true;
+      valordigitado = atualizarNumero(valordigitado,key);
+      Serial.print("valordigitado:");
+      Serial.println(valordigitado);
+    }
   }
 
   key = ' '; //Zera key
-  
 }
 
 void Analisar()
@@ -625,11 +767,12 @@ void Analisar()
     case ST_SET_VELOC_INIC:
       Setup_Veloc_Inic();
       break;
+    case ST_SET_CONTE_INIC:
+      Setup_CONTE_Inic();
+      break;      
   }
+  
 }
-
-
-
 
 void loop()
 {    
