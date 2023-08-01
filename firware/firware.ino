@@ -5,6 +5,7 @@
 #include <max6675.h>
 #include <string.h>
 #include <ctype.h>
+#include <EEPROM.h>
 
 #define pin01 06
 #define pin02 07
@@ -23,6 +24,8 @@ int posBarra = 0;
 //Funcoes 
 void SetVelocidade( int veloc );
 void PrintfXY(int x, int y, float valor);
+float getTemperatura() ;
+void setTemperatura(float temperatura); 
 
 // Definição dos estados da máquina
 enum State {
@@ -32,7 +35,8 @@ enum State {
   ST_DOSREV,       // Estado de dosagem reversa
   ST_SET_INIC,     // Estado de Setup Inicial 
   ST_SET_VELOC_INIC, //Inicio Velocidade   
-  ST_SET_CONTE_INIC //Inicio Conteudo
+  ST_SET_CONTE_INIC, //Inicio Conteudo
+  ST_SET_TEMPE_INIC  //Inicio Temperatura
 };
 
 // Define a intensidade luminosa de cada cor (varia de 0 a 255)
@@ -104,12 +108,38 @@ int velocidade = 255;
 float volumeEmMl = 3.5;
 float fluxoEmMlPorMinuto = 43.29; //velocidade 100
 float valordigitado = 0;
+float maxTemperatura = 99; //Temperatura maxima permitida
+float Temperatura = 60; //Temperatura indicada
 
 AF_DCMotor Motor(1);
 unsigned long dosingStartTime; // Variável para armazenar o tempo de início da dosagem
 unsigned long dosingTime = 5000; // Tempo de dosagem em milissegundos (5 segundos, por exemplo)
 // Variável para controlar o estado atual da máquina
 State currentState = ST_START;
+
+
+float getTemperatura() 
+{
+  byte floatBytes[4];
+  
+  for (int i = 0; i < 4; i++) {
+    floatBytes[i] = EEPROM.read(i);
+  }
+  
+  float temperatura;
+  memcpy(&temperatura, &floatBytes, sizeof(temperatura));
+
+  return temperatura;
+}
+
+void setTemperatura(float temperatura) 
+{
+  byte* floatBytes = (byte*) &temperatura;
+
+  for (int i = 0; i < 4; i++) {
+    EEPROM.write(i, floatBytes[i]);
+  }
+}
 
 
 void ChangeState( State value)
@@ -296,8 +326,10 @@ void Inicia_Variaveis(){
   ChangeState(ST_START);
   memset(buffer,'\0',sizeof(buffer));
   calcularVolume(velocidade); /*Calcula volume*/
+  Temperatura = getTemperatura(); //Pega temperatura da EEPROM
   PrintXY(0,0,"        Dosador");
   PrintXY(0,1,"       Versao 1.0");
+  
   WindowsStart();
 }
 
@@ -449,6 +481,14 @@ void Mostra_Conteudo()
     PrintfXY(0,2,valordigitado);  
 }
 
+//Mostra Conteudo
+void Mostra_Temperatura()
+{
+    PrintXY(0,1,"Digite o valor, # < ");
+    PrintfXY(0,2,valordigitado);  
+}
+
+
 
 void Setup_Inicio()
 {
@@ -493,6 +533,19 @@ void Setup_CONTE_Inic()
     PrintXY(0,3,"DIGITE | ENT/ESC ");
     //Serial.println("Setup_Veloc_Inic()");
   }  
+}
+
+void Setup_TEMPE_Inic()
+{
+  
+  if(flgDispChange)
+  {    
+    CLS();
+    flgDispChange = false;
+    PrintXY(0,0,"# SETUP TEMPERATURA #");
+    Mostra_Temperatura();
+    PrintXY(0,3,"DIGITE | ENT/ESC ");
+  }  
 
 }
 
@@ -522,6 +575,16 @@ void MudaSetup()
     valordigitado = volumeEmMl;
     Serial.println("Fim de MudaSetup()");
   //ST_SET_CONTE_INIC
+  }
+  if ((pagina==1)&&(posicaopag==0)) {
+    Serial.println("Mudou para ST_SET_TEMPE_INIC");
+    flgDispChange= true;
+    //Atribui valor de temperatura
+    
+    ChangeState(ST_SET_TEMPE_INIC);
+    valordigitado = Temperatura;
+    Serial.println("Fim de MudaSetup()");
+  //ST_SET_TEMPE_INIC
   }
 }
 
@@ -684,8 +747,14 @@ void Analisa_teclas()
       Serial.println("#");
       flgDispChange= true;
       valordigitado = atualizarNumero(valordigitado,key);
-    }
-    
+    }    
+    //O Controle derivador do setup
+    if(currentState==ST_SET_TEMPE_INIC)
+    {
+      Serial.println("#");
+      flgDispChange= true;
+      valordigitado = atualizarNumero(valordigitado,key);
+    }        
   }
   //Seta Enter
   if(key=='n')
@@ -714,8 +783,24 @@ void Analisa_teclas()
         flgDispChange= true;
         ICQ();
         volumeEmMl = valordigitado;
-        ChangeState(ST_SET_INIC);   
-        
+        ChangeState(ST_SET_INIC);           
+      }
+      //O Controle derivador do setup
+      if(currentState==ST_SET_TEMPE_INIC)
+      {
+        flgDispChange= true;
+        ICQ();
+        if (valordigitado > maxTemperatura)
+        { 
+          Temperatura = maxTemperatura;  
+               
+          PrintXY(0,2,"Temp MAX Excedida");
+        } else {        
+          Temperatura = valordigitado;
+          setTemperatura(maxTemperatura);   
+          ChangeState(ST_SET_INIC); 
+        }
+                  
       }
       
     }
@@ -731,6 +816,13 @@ void Analisa_teclas()
       Serial.print("valordigitado:");
       Serial.println(valordigitado);
     }
+    if(currentState==ST_SET_TEMPE_INIC)
+    {      
+      flgDispChange= true;
+      valordigitado = atualizarNumero(valordigitado,key);
+      Serial.print("valordigitado:");
+      Serial.println(valordigitado);
+    }    
   }
 
   key = ' '; //Zera key
@@ -769,7 +861,10 @@ void Analisar()
       break;
     case ST_SET_CONTE_INIC:
       Setup_CONTE_Inic();
-      break;      
+      break;   
+    case ST_SET_TEMPE_INIC:
+      Setup_TEMPE_Inic();
+      break;          
   }
   
 }
