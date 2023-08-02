@@ -20,12 +20,25 @@ int MenuCont = 0;
 int MAXCont = 5; //Maximo de menus
 int MAXBarra = 255;
 int posBarra = 0;
-
+int velocidade = 255;
+float volumeEmMl = 3.5;
+float fluxoEmMlPorMinuto = 43.29; //velocidade 100
+float valordigitado = 0;
+float maxTemperatura = 99; //Temperatura maxima permitida
+float Temperatura = 60; //Temperatura indicada
+bool Aquecimento = true;
 //Funcoes 
-void SetVelocidade( int veloc );
+
 void PrintfXY(int x, int y, float valor);
-float getTemperatura() ;
+float getTemperatura();
+float getConteudo(); 
+int getVelocidade(); 
+bool getAquecimento(); 
 void setTemperatura(float temperatura); 
+void setConteudo(float Conteudo);
+void SetVelocidade( int veloc );
+void setAquecimento(bool Conteudo); 
+
 
 // Definição dos estados da máquina
 enum State {
@@ -36,7 +49,8 @@ enum State {
   ST_SET_INIC,     // Estado de Setup Inicial 
   ST_SET_VELOC_INIC, //Inicio Velocidade   
   ST_SET_CONTE_INIC, //Inicio Conteudo
-  ST_SET_TEMPE_INIC  //Inicio Temperatura
+  ST_SET_TEMPE_INIC,  //Inicio Temperatura
+  ST_SET_AQUEC_INIC  //Inicio Aquecimento
 };
 
 // Define a intensidade luminosa de cada cor (varia de 0 a 255)
@@ -104,12 +118,6 @@ Keypad keypad = Keypad(makeKeymap(keyMap), rowPins, colPins, numRows, numCols);
 char key; //Tecla digitada
 char buffer[255];
 
-int velocidade = 255;
-float volumeEmMl = 3.5;
-float fluxoEmMlPorMinuto = 43.29; //velocidade 100
-float valordigitado = 0;
-float maxTemperatura = 99; //Temperatura maxima permitida
-float Temperatura = 60; //Temperatura indicada
 
 AF_DCMotor Motor(1);
 unsigned long dosingStartTime; // Variável para armazenar o tempo de início da dosagem
@@ -132,6 +140,44 @@ float getTemperatura()
   return temperatura;
 }
 
+float getConteudo() 
+{
+  byte floatBytes[4];
+  
+  for (int i = 0; i < 4; i++) {
+    floatBytes[i+4] = EEPROM.read(i);
+  }
+  
+  float Conteudo;
+  memcpy(&Conteudo, &floatBytes, sizeof(Conteudo));
+
+  return Conteudo;
+}
+
+
+int getVelocidade() 
+{
+  byte floatBytes[2];
+  
+  for (int i = 0; i < 2; i++) {
+    floatBytes[i+8] = EEPROM.read(i);
+  }
+  
+  int Velocidade;
+  memcpy(&Velocidade, &floatBytes, sizeof(Velocidade));
+
+  return Velocidade;
+}
+
+bool getAquecimento() 
+{
+  bool aqueci;
+  
+  aqueci = (EEPROM.read(10)==0?false:true);
+   
+  return aqueci;
+}
+
 void setTemperatura(float temperatura) 
 {
   byte* floatBytes = (byte*) &temperatura;
@@ -139,6 +185,34 @@ void setTemperatura(float temperatura)
   for (int i = 0; i < 4; i++) {
     EEPROM.write(i, floatBytes[i]);
   }
+}
+
+void setConteudo(float Conteudo) 
+{
+  byte* floatBytes = (byte*) &Conteudo;
+
+  for (int i = 0; i < 4; i++) {
+    EEPROM.write(i+4, floatBytes[i]);
+  }
+}
+
+
+void SetVelocidade( int veloc )
+{
+   byte* floatBytes = (byte*) &veloc;
+
+  for (int i = 0; i < 2; i++) {
+    EEPROM.write(i+8, floatBytes[i]);
+  }
+  velocidade = veloc;
+  Motor.setSpeed(velocidade);
+  Serial.print("Velocidade:");
+  Serial.println(velocidade);
+}
+
+void setAquecimento(bool Conteudo) 
+{ 
+    EEPROM.write(10, (Conteudo==true?255:0)); 
 }
 
 
@@ -188,13 +262,6 @@ float atualizarNumero(float numeroAtual, char caracter) {
     return numeroAtual;
 }
 
-void SetVelocidade( int veloc )
-{
-  velocidade = veloc;
-  Motor.setSpeed(velocidade);
-  Serial.print("Velocidade:");
-  Serial.println(velocidade);
-}
 
 // Função para calcular o volume de dosagem com base na velocidade da bomba
 float calcularVolume(float velocidade)
@@ -327,6 +394,8 @@ void Inicia_Variaveis(){
   memset(buffer,'\0',sizeof(buffer));
   calcularVolume(velocidade); /*Calcula volume*/
   Temperatura = getTemperatura(); //Pega temperatura da EEPROM
+  velocidade = getVelocidade(); //Pega a velocidade da EEPROM
+  volumeEmMl = getConteudo(); //Pega o valor do conteudo da EEPROM
   PrintXY(0,0,"        Dosador");
   PrintXY(0,1,"       Versao 1.0");
   
@@ -488,7 +557,11 @@ void Mostra_Temperatura()
     PrintfXY(0,2,valordigitado);  
 }
 
-
+void Mostra_Aquecimento()
+{
+    PrintXY(0,1,"Setas para mudar, # < ");
+    PrintXY(0,2,(valordigitado==0?"Desligado:":"Ativo"));  
+}
 
 void Setup_Inicio()
 {
@@ -531,7 +604,6 @@ void Setup_CONTE_Inic()
     Mostra_Conteudo();
     
     PrintXY(0,3,"DIGITE | ENT/ESC ");
-    //Serial.println("Setup_Veloc_Inic()");
   }  
 }
 
@@ -545,6 +617,20 @@ void Setup_TEMPE_Inic()
     PrintXY(0,0,"# SETUP TEMPERATURA #");
     Mostra_Temperatura();
     PrintXY(0,3,"DIGITE | ENT/ESC ");
+  }  
+
+}
+
+void Setup_AQUEC_Inic()
+{
+  
+  if(flgDispChange)
+  {    
+    CLS();
+    flgDispChange = false;
+    PrintXY(0,0,"# SETUP AQUECIMENTO #");
+    Mostra_Aquecimento();
+    PrintXY(0,3,"SETA | ENT/ESC ");
   }  
 
 }
@@ -586,6 +672,16 @@ void MudaSetup()
     Serial.println("Fim de MudaSetup()");
   //ST_SET_TEMPE_INIC
   }
+  if ((pagina==1)&&(posicaopag==1)) {
+    Serial.println("Mudou para ST_SET_AQUEC_INIC");
+    flgDispChange= true;
+    //Atribui valor de temperatura
+    
+    ChangeState(ST_SET_AQUEC_INIC);
+    valordigitado = Aquecimento==true?255:0;
+    Serial.println("Fim de MudaSetup()");
+    //ST_SET_AQUEC_INIC
+  }  
 }
 
 //*******Fim de bloco de setup***
@@ -666,7 +762,14 @@ void Analisa_teclas()
         posBarra = MAXBarra;
        }
        Serial.println(posBarra);     
-    }    
+    }  
+    //Controle de Aquecimento
+    if(currentState==ST_SET_AQUEC_INIC)
+    {
+      flgDispChange= true;
+      valordigitado = !valordigitado;
+      Serial.println(valordigitado);     
+    }          
   }
     //Seta p cima
   if(key=='^')
@@ -699,6 +802,13 @@ void Analisa_teclas()
       }
       
     }
+    //Controle de Aquecimento
+    if(currentState==ST_SET_AQUEC_INIC)
+    {
+      flgDispChange= true;
+      valordigitado = !valordigitado;
+      Serial.println(valordigitado);     
+    }              
   }
   if(key=='>')
   {
@@ -715,10 +825,17 @@ void Analisa_teclas()
         posBarra= 0;
       }
     }
+    //Controle de Aquecimento
+    if(currentState==ST_SET_AQUEC_INIC)
+    {
+      flgDispChange= true;
+      valordigitado = !valordigitado;
+      Serial.println(valordigitado);     
+    }              
   }
   if(key=='<')
   {
-    if(currentState==ST_SET_VELOC_INIC)
+    if(currentState==ST_SET_VELOC_INIC)  //Temos problema
     {
       flgDispChange= true;
       valordigitado = atualizarNumero(valordigitado,key);
@@ -737,6 +854,13 @@ void Analisa_teclas()
       }
       Serial.println(posBarra);     
     }    
+    //Controle de Aquecimento
+    if(currentState==ST_SET_AQUEC_INIC)
+    {
+      flgDispChange= true;
+      valordigitado = !valordigitado;
+      Serial.println(valordigitado);     
+    }              
   }
   //Seta Enter
   if(key=='#')
@@ -754,7 +878,15 @@ void Analisa_teclas()
       Serial.println("#");
       flgDispChange= true;
       valordigitado = atualizarNumero(valordigitado,key);
-    }        
+    }    
+    //O Controle derivador do setup
+    if(currentState==ST_SET_AQUEC_INIC)
+    {
+      Serial.println("#");
+      flgDispChange= true;
+      Aquecimento = valordigitado==0?false:true;
+      setAquecimento(Aquecimento);
+    }       
   }
   //Seta Enter
   if(key=='n')
@@ -783,6 +915,7 @@ void Analisa_teclas()
         flgDispChange= true;
         ICQ();
         volumeEmMl = valordigitado;
+        setConteudo(volumeEmMl); //Grava em EEPROM
         ChangeState(ST_SET_INIC);           
       }
       //O Controle derivador do setup
@@ -799,8 +932,14 @@ void Analisa_teclas()
           Temperatura = valordigitado;
           setTemperatura(maxTemperatura);   
           ChangeState(ST_SET_INIC); 
-        }
-                  
+        }                  
+      }
+      //O Controle derivador do setup
+      if(currentState==ST_SET_AQUEC_INIC)
+      {
+        flgDispChange= true;
+        ICQ();
+        valordigitado = !valordigitado;
       }
       
     }
@@ -864,7 +1003,10 @@ void Analisar()
       break;   
     case ST_SET_TEMPE_INIC:
       Setup_TEMPE_Inic();
-      break;          
+      break;    
+    case ST_SET_AQUEC_INIC:
+      Setup_AQUEC_Inic();
+      break;           
   }
   
 }
