@@ -7,8 +7,8 @@
 #include <ctype.h>
 #include <EEPROM.h>
 
-#define pin01 06
-#define pin02 07
+#define pin01 42
+#define pin02 44
 #define redPin  24   // Pino digital conectado ao terminal R do LED RGB
 #define greenPin  26 // Pino digital conectado ao terminal G do LED RGB
 #define bluePin  28  // Pino digital conectado ao terminal B do LED RGB
@@ -22,7 +22,8 @@ int MAXBarra = 255;
 int posBarra = 0;
 int velocidade = 255;
 float volumeEmMl = 3.5;
-float fluxoEmMlPorMinuto = 43.29; //velocidade 100
+//float fluxoEmMlPorMinuto = 43.29; //velocidade 100
+float fluxoEmMlPorMinuto = 82.25; //velocidade 100
 float valordigitado = 0;
 float maxTemperatura = 99; //Temperatura maxima permitida
 float Temperatura = 60; //Temperatura indicada
@@ -38,6 +39,7 @@ void setTemperatura(float temperatura);
 void setConteudo(float Conteudo);
 void SetVelocidade( int veloc );
 void setAquecimento(bool Conteudo); 
+void Rele(bool flgctrl);
 
 
 // Definição dos estados da máquina
@@ -45,12 +47,11 @@ enum State {
   ST_START,       // Estado inicial, aguardando para iniciar a dosagem
   ST_INICIO,       // Estado inicial, aguardando para iniciar a dosagem
   ST_DOSATV,       // Estado de dosagem ativa
-  ST_DOSREV,       // Estado de dosagem reversa
   ST_SET_INIC,     // Estado de Setup Inicial 
   ST_SET_VELOC_INIC, //Inicio Velocidade   
   ST_SET_CONTE_INIC, //Inicio Conteudo
   ST_SET_TEMPE_INIC,  //Inicio Temperatura
-  ST_SET_AQUEC_INIC  //Inicio Aquecimento
+  ST_SET_AQUEC_INIC  //Inicio Aquecimento  
 };
 
 // Define a intensidade luminosa de cada cor (varia de 0 a 255)
@@ -267,7 +268,7 @@ float atualizarNumero(float numeroAtual, char caracter) {
 float calcularVolume(float velocidade)
 {
   // Como exemplo, usaremos uma relação linear simples, onde dosingVolume = 43.29 para velocidade = 100.
-  fluxoEmMlPorMinuto = 0.4329*velocidade;
+  //fluxoEmMlPorMinuto = 0.4329*velocidade;
   return fluxoEmMlPorMinuto;
 }
 
@@ -275,6 +276,10 @@ float calcularVolume(float velocidade)
 unsigned long calcularTempoDeDosagem(float volumeEmMl, float fluxoEmMlPorMinuto)
 {
   calcularVolume(velocidade);
+  Serial.print("volumeEmML:");
+  Serial.println(volumeEmMl);
+  Serial.print("fluxoEmMlPorMinuto:");
+  Serial.println(fluxoEmMlPorMinuto);
   return (volumeEmMl / fluxoEmMlPorMinuto) * 60 * 1000; // Tempo fixo em milissegundos para este exemplo (5 segundos)
   //return 10000;
 }
@@ -396,6 +401,7 @@ void Inicia_Variaveis(){
   Temperatura = getTemperatura(); //Pega temperatura da EEPROM
   velocidade = getVelocidade(); //Pega a velocidade da EEPROM
   volumeEmMl = getConteudo(); //Pega o valor do conteudo da EEPROM
+  Aquecimento = getAquecimento(); //Pega o valor do conteudo da EEPROM
   PrintXY(0,0,"        Dosador");
   PrintXY(0,1,"       Versao 1.0");
   
@@ -428,37 +434,47 @@ void Succao(){
   dosingTime = calcularTempoDeDosagem(volumeEmMl, fluxoEmMlPorMinuto);
   //FORWARD
   Motor.run(BACKWARD); //delante
+  Serial.println("Sucao");
   dosingStartTime = millis();
   //currentState = ST_DOSATV;
   ChangeState(ST_DOSATV);
+  flgDispChange= true;
 }
 
 void Parar(){
   Motor.run(RELEASE);
+  Serial.println("Parar");
   //currentState = ST_INICIO;
   ChangeState(ST_INICIO);
+  flgDispChange= true;
   ICQ();
 }
 
 void Despejar(){
+  
   dosingTime = calcularTempoDeDosagem(volumeEmMl, fluxoEmMlPorMinuto);
+  Serial.println(dosingTime);
   //BACKWARD
   Motor.run(FORWARD); //paro
+  Serial.println("Despejar");
   dosingStartTime = millis();
   //currentState = ST_INICIO;
-  ChangeState(ST_INICIO);
+  ChangeState(ST_DOSATV);
+  flgDispChange= true;
 }
 
 
 void Analisa_DosAtv()
 {
-
+  //Serial.println("Analisa_DosAtv"); 
   // Verifica se o tempo de dosagem foi alcançado
-  if (millis() - dosingStartTime >= dosingTime)
+  if ((millis() - dosingStartTime) >= dosingTime)
   {
+        Serial.println("Deu tempo");
         Parar(); // Para a dosagem
         //currentState = ST_INICIO;
         ChangeState(ST_INICIO);
+        flgDispChange= true;
         
   }
 }
@@ -482,6 +498,34 @@ void Controla_Led()
   analogWrite(greenPin, greenIntensity);
   analogWrite(bluePin, blueIntensity);
 }
+
+void Rele(bool flgctrl)
+{
+  // put your setup code here, to run once:
+  
+  if(!flgctrl)
+  {
+    if(digitalRead(pin02)==HIGH)
+    {
+      
+      digitalWrite(pin01,LOW);
+      digitalWrite(pin02,LOW);
+      
+      Serial.println("mudou Baixo");
+    }
+  } else 
+  {
+    if(digitalRead(pin02)==LOW)
+    {
+      digitalWrite(pin01,LOW);
+      digitalWrite(pin02,HIGH);
+      
+      Serial.println("mudou Alto");
+    }
+  }
+}
+
+
 
 
 
@@ -709,6 +753,23 @@ void Le_Termopar()
     strcat(strtmp,"C");
     PrintXY(0,2,strtmp);
   }
+  if(Aquecimento)
+  {
+    //Serial.print("Temperatura:");
+    //Serial.println(Temperatura);
+    //Serial.print("Atual:");
+    //Serial.println(teplotaC);
+    if(teplotaC<Temperatura)
+    {      
+      //Serial.println("Liga sensor");
+      Rele(true);
+    } else
+    {
+      //Serial.println("Desliga sensor");
+      Rele(false);
+    }
+    
+  }
 }
 
 void Leituras()
@@ -721,6 +782,25 @@ void Leituras()
 void Analisa_teclas()
 {
   //F1
+  if(key=='F'){
+    if(currentState==ST_INICIO)
+    {
+      if (Temperatura<=teplotaC)
+      {
+        Despejar();
+        Serial.println("Despejar");
+        //flgDispChange= true;
+      }
+      else
+      {
+        Serial.println("Temperatura nao alcançada");
+        Serial.println(Temperatura);
+        Serial.println(teplotaC);
+      
+      }
+    }
+    
+  }
   if(key=='G'){
     if(currentState==ST_INICIO){
       ChangeState(ST_SET_INIC);
@@ -866,12 +946,15 @@ void Analisa_teclas()
   if(key=='#')
   {
     //O Controle derivador do setup
+    
     if(currentState==ST_SET_CONTE_INIC)
     {
       Serial.println("#");
       flgDispChange= true;
-      valordigitado = atualizarNumero(valordigitado,key);
-    }    
+      //valordigitado = atualizarNumero(valordigitado,key);
+      valordigitado = 0;
+    } 
+       
     //O Controle derivador do setup
     if(currentState==ST_SET_TEMPE_INIC)
     {
@@ -879,12 +962,15 @@ void Analisa_teclas()
       flgDispChange= true;
       valordigitado = atualizarNumero(valordigitado,key);
     }    
+    
+   
     //O Controle derivador do setup
     if(currentState==ST_SET_AQUEC_INIC)
     {
       Serial.println("#");
       flgDispChange= true;
-      Aquecimento = valordigitado==0?false:true;
+      //Aquecimento = ==0?false:true;
+      valordigitado = Aquecimento==0?false:true;
       setAquecimento(Aquecimento);
     }       
   }
@@ -925,12 +1011,13 @@ void Analisa_teclas()
         ICQ();
         if (valordigitado > maxTemperatura)
         { 
-          Temperatura = maxTemperatura;  
+          Temperatura = maxTemperatura; 
+          setTemperatura(Temperatura);   
                
           PrintXY(0,2,"Temp MAX Excedida");
         } else {        
           Temperatura = valordigitado;
-          setTemperatura(maxTemperatura);   
+          setTemperatura(Temperatura);   
           ChangeState(ST_SET_INIC); 
         }                  
       }
@@ -939,7 +1026,10 @@ void Analisa_teclas()
       {
         flgDispChange= true;
         ICQ();
-        valordigitado = !valordigitado;
+        
+        Aquecimento = valordigitado==0?false:true;
+        setAquecimento(Aquecimento);
+        ChangeState(ST_SET_INIC); 
       }
       
     }
@@ -984,10 +1074,6 @@ void Analisar()
 
     case ST_DOSATV:
       // Seu código para determinar quando parar a dosagem
-      Analisa_DosAtv();
-      break;
-
-    case ST_DOSREV:
       Analisa_DosAtv();
       break;
 
