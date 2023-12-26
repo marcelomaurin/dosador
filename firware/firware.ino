@@ -12,7 +12,7 @@
 #define redPin  24   // Pino digital conectado ao terminal R do LED RGB
 #define greenPin  26 // Pino digital conectado ao terminal G do LED RGB
 #define bluePin  28  // Pino digital conectado ao terminal B do LED RGB
-#define buzzerPin  49 // Pino digital conectado ao buzzer
+#define buzzerPin  34 // Pino digital conectado ao buzzer
 
 
 boolean flgDispChange = false;
@@ -59,9 +59,9 @@ int redIntensity = 255;   // 0 (apagado) a 255 (máximo brilho)
 int greenIntensity = 128; // 0 (apagado) a 255 (máximo brilho)
 int blueIntensity = 64;   // 0 (apagado) a 255 (máximo brilho)
 
-int pinSO  = 36; // Atribui o pino 8 como SO
-int pinCS  = 38; // Atribui o pino 9 como CS
-int pinSCK = 40; // Atribui o pino 10 como SCK
+int pinSO  = A9; // Atribui o pino 8 como SO
+int pinCS  = A10; // Atribui o pino 9 como CS
+int pinSCK = A11; // Atribui o pino 10 como SCK
 
 
 // Cria uma instância da biblioteca MAX6675.
